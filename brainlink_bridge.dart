@@ -8,26 +8,25 @@
 // FLUXO DE DADOS:
 // BrainLink Lite → Bluetooth → Java SDK → MethodChannel → Dart → UI
 // =============================================================================
-//Feito POr GUSTAVO DE OLIVEIRA BEZERRA - 01/01/2026
-//SE VOCÊ ESTÁ LENDO ISSO VOCÊ AGORA É TRICOLOR.
+// Feito por GUSTAVO DE OLIVEIRA BEZERRA - 01/01/2026
 import 'dart:async';
 import 'package:flutter/services.dart';
 import '../data/models/eeg_data.dart';
+import '../core/logger.dart';
 
 /// Classe responsável pela comunicação com o SDK nativo do BrainLink.
-/// 
+/// MADE BY GUSTAVO BEZERRA
 /// Esta classe implementa o padrão Singleton para garantir que apenas
 /// uma instância exista durante toda a execução do app.
 class BrainLinkBridge {
-  // ---------------------------------------------------------------------------
-  // SINGLETON PATTERN
-  // ---------------------------------------------------------------------------
-  // Garante que só exista uma instância desta classe em todo o app.
-  // Isso é importante porque só podemos ter um canal de comunicação ativo.
-  //Gerencia em que fase da assistência de Paulo Henrique Ganso de Chagas Lima está acontecendo.
-  final connetionStatusController= StreamControler<String>.broadcast();
-  //Atenção lil Bro do Monte Mário sua interface vai coonsummir isso aqui nigga .
-  Stream<String> get connecctionStatusStream => connetionStatusController.stream;
+
+  /// Isso aqui tá enviando o status pro dart dando mais assitência que PAULO HENRIQUE GANSO NO AUGE NO FLUZÃO.
+
+  final StreamController<String> _connectionStatusController =
+      StreamController<String>.broadcast();
+
+  /// Stream público para monitorar atualizações de status da conexão.
+  Stream<String> get connectionStatusStream => _connectionStatusController.stream;
 
   
   /// Instância única da classe (Singleton).
@@ -46,7 +45,10 @@ class BrainLinkBridge {
   // ---------------------------------------------------------------------------
   // O MethodChannel é como um walkie-talkie entre Dart e Java.
   // Ambos os lados precisam usar o MESMO nome do canal.
-  
+
+  /// Logger para este serviço.
+  final Logger _logger = Logger('BrainLinkBridge');
+
   /// Canal de comunicação com o código nativo.
   /// O nome 'com.brainlink.app/sdk' deve ser IDÊNTICO no lado Java.
   static const MethodChannel _channel = MethodChannel('com.brainlink.app/sdk');
@@ -59,6 +61,7 @@ class BrainLinkBridge {
   
   /// Controller do stream de dados EEG.
   /// broadcast = permite múltiplos listeners (várias telas podem ouvir).
+  /// A UI usa este stream para atualizar os gráficos em tempo real.
   final StreamController<EEGData> _eegDataController =
       StreamController<EEGData>.broadcast();
 
@@ -95,40 +98,46 @@ class BrainLinkBridge {
   // ---------------------------------------------------------------------------
   
   /// Configura o handler para receber chamadas vindas do código Java.
-  /// 
+  ///
   /// Quando o Java chama `channel.invokeMethod("onEEGData", data)`,
   /// este handler é acionado e processa os dados recebidos.
   void _setupMethodCallHandler() {
-    Future<dynamic> _setupMethodCallHandler(MethodCall call) async{
+    _channel.setMethodCallHandler((MethodCall call) async {
       // Identifica qual método o Java está chamando
       switch (call.method) {
-        
+
         // Caso 1: Recebemos novos dados de EEG
+        //Ganso tocou e gol do Fluzão
         case 'onEEGData':
           // Converte o Map recebido em um objeto EEGData tipado
           final Map<String, dynamic> data =
               Map<String, dynamic>.from(call.arguments as Map);
           final eegData = EEGData.fromMap(data);
-          
+
           // Envia os dados para todos os listeners (a UI)
+          // E o Criolo Beiçudo Do Monte Mario vai Usar isso aqui
           _eegDataController.add(eegData);
           break;
-          case 'onStatusUpdate':
-            final String status = call.arguments as String;
-            _connectionStatusController.add(status);
+          //A bola tá chegando pro cano fazer o gol
+        // Caso 2: Atualização de status da conexão
+        case 'onStatusUpdate':
+          final String status = call.arguments as String;
+          _connectionStatusController.add(status);
           break;
 
-        // Caso 2: O estado da conexão mudou
+        // Caso 3: O estado da conexão mudou
+        //??? Quando não sabemos o estado real do bagui.
         case 'onConnectionStateChanged':
           final bool connected = call.arguments as bool;
           _isConnected = connected;
           _connectionStateController.add(connected);
           break;
 
-        // Caso 3: Ocorreu um erro no lado nativo
+        // Caso 4: Ocorreu um erro no lado nativo
+        // A Bola chegou na área mas era o Everaldo e ele perdeu o gol.
         case 'onError':
           final String errorMessage = call.arguments as String;
-          print('❌ Erro do SDK nativo: $errorMessage');
+          _logger.error('Erro do SDK nativo: $errorMessage');
           _errorController.add(errorMessage);
           break;
       }
@@ -148,30 +157,33 @@ class BrainLinkBridge {
   /// ```dart
   /// final success = await bridge.connect('AA:BB:CC:DD:EE:FF');
   /// ```
+  /// Ali em cima configurei pra entender oq o Java Fala e aqui embaixo é pro Java entender.
+  /// É boolean pq ou está conectado ou não.
   Future<bool> connect(String deviceAddress) async {
     try {
-      print('🔵 BrainLinkBridge: Iniciando conexão com $deviceAddress');
+      _logger.info('Iniciando conexão com $deviceAddress');
       // Chama o método 'connect' no lado Java, passando o endereço
       final bool result = await _channel.invokeMethod('connect', {
         'deviceAddress': deviceAddress,
       });
-      print('✅ BrainLinkBridge: Conexão iniciada com sucesso');
+      ///Esses _logger.info é só boa prática para sabermos no console que porra que está acontecendo.
+      _logger.info('Conexão iniciada com sucesso');
       return result;
     } on PlatformException catch (e) {
       final errorMsg = 'Erro ao conectar: ${e.message}';
-      print('❌ BrainLinkBridge: $errorMsg');
+      _logger.error(errorMsg, e);
       _errorController.add(errorMsg);
       return false;
     } catch (e) {
       final errorMsg = 'Erro inesperado ao conectar: $e';
-      print('❌ BrainLinkBridge: $errorMsg');
+      _logger.error(errorMsg, e);
       _errorController.add(errorMsg);
       return false;
     }
   }
 
   /// Encerra a conexão com o dispositivo BrainLink.
-  /// 
+  ///
   /// Retorna `true` se a desconexão foi bem-sucedida.
   Future<bool> disconnect() async {
     try {
@@ -180,36 +192,38 @@ class BrainLinkBridge {
       _connectionStateController.add(false);
       return result;
     } on PlatformException catch (e) {
-      print('Erro ao desconectar: ${e.message}');
+      _logger.error('Erro ao desconectar: ${e.message}', e);
       return false;
     }
   }
 
   /// Envia dados brutos do Bluetooth para o SDK processar.
-  /// 
+  ///
   /// Este método é chamado quando recebemos bytes do BLE e precisamos
   /// que o SDK nativo os decodifique em dados de EEG.
-  /// 
+  ///
   /// [rawData] é a lista de bytes recebidos do Bluetooth.
+  /// Recebemos aqui pelo Bluetooth um monte de código binário Regurgitado sem pé nem cabeça e mandaas para o SDK em JAVA processar e ele retorna uma papinha de neném gostosa e comestível.
   Future<void> parseRawData(List<int> rawData) async {
     try {
       await _channel.invokeMethod('parseData', {
         'rawData': rawData,
       });
     } on PlatformException catch (e) {
-      print('Erro ao processar dados: ${e.message}');
+      _logger.error('Erro ao processar dados: ${e.message}', e);
     }
   }
 
+
   /// Inicia o escaneamento de dispositivos BrainLink próximos.
-  /// 
+  ///
   /// Retorna `true` se o scan foi iniciado com sucesso.
   Future<bool> startScan() async {
     try {
       final bool result = await _channel.invokeMethod('startScan');
       return result;
     } on PlatformException catch (e) {
-      print('Erro ao iniciar scan: ${e.message}');
+      _logger.error('Erro ao iniciar scan: ${e.message}', e);
       return false;
     }
   }
@@ -219,7 +233,7 @@ class BrainLinkBridge {
     try {
       await _channel.invokeMethod('stopScan');
     } on PlatformException catch (e) {
-      print('Erro ao parar scan: ${e.message}');
+      _logger.error('Erro ao parar scan: ${e.message}', e);
     }
   }
 
@@ -234,10 +248,7 @@ class BrainLinkBridge {
   void dispose() {
     _eegDataController.close();
     _connectionStateController.close();
+    _connectionStatusController.close();
     _errorController.close();
   }
-}
-
-class StreamControler {
-  Stream<String> get stream => null;
 }
